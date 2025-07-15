@@ -14,7 +14,7 @@
   - Add validation logic to filter out empty lines and validate CIDR format
   - _Requirements: 1.1, 1.4_
 
-- [ ] 3. Create AWS Security Group resource with dynamic rules
+- [x] 3. Create AWS Security Group resource with dynamic rules
 
   - Implement aws_security_group resource with proper naming and tagging
   - Create dynamic ingress blocks that iterate over Cloudflare IP ranges

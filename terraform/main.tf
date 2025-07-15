@@ -78,3 +78,45 @@ data "http" "cloudflare_ips_v6" {
     }
   }
 }
+
+# AWS Security Group for Cloudflare IP whitelist
+resource "aws_security_group" "cloudflare_whitelist" {
+  name_prefix = "${local.security_group_name}-"
+  description = "Security group allowing traffic from Cloudflare IP ranges"
+  vpc_id      = var.vpc_id
+
+  # Dynamic ingress rules for each Cloudflare IP range and port combination
+  dynamic "ingress" {
+    for_each = setproduct(local.all_cloudflare_ips, var.allowed_ports)
+    content {
+      description = "Cloudflare IP range ${ingress.value[0]} - Port ${ingress.value[1]}"
+      from_port   = ingress.value[1]
+      to_port     = ingress.value[1]
+      protocol    = var.protocol
+      cidr_blocks = contains(ingress.value[0], ":") ? [] : [ingress.value[0]]
+      ipv6_cidr_blocks = contains(ingress.value[0], ":") ? [ingress.value[0]] : []
+    }
+  }
+
+  # Explicit egress rules (default allows all outbound)
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name = local.security_group_name
+      Description = "Cloudflare IP whitelist security group"
+    }
+  )
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
