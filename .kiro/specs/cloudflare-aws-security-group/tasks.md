@@ -7,7 +7,7 @@
   - Set up basic variable definitions for VPC ID, environment, and ports
   - _Requirements: 1.1, 2.2, 5.1, 5.3_
 
-- [ ] 2. Implement Cloudflare IP data retrieval
+- [x] 2. Implement Cloudflare IP data retrieval
 
   - Create data sources to fetch Cloudflare IPv4 and IPv6 IP ranges from official APIs
   - Implement local values to parse and combine IP ranges from both endpoints
@@ -18,15 +18,14 @@
 
   - Implement aws_security_group resource with proper naming and tagging
   - Create dynamic ingress blocks that iterate over Cloudflare IP ranges
-  - Configure rules for TCP port 443 with descriptive rule descriptions
-  - _Requirements: 1.2, 1.3, 2.1, 2.2, 5.3_
+  - Configure rules for configurable ports with descriptive rule descriptions
+  - _Requirements: 1.2, 1.3, 2.1, 2.2, 5.1, 5.2, 5.3_
 
-- [ ] 4. Add Terraform outputs and variable validation
+- [ ] 4. Enable Terraform outputs for security group information
 
-  - Define output values for security group ID, ARN, and IP count
-  - Implement variable validation for ports, protocols, and VPC ID format
-  - Add descriptions and default values for all variables
-  - _Requirements: 2.2, 5.1, 5.2, 5.4_
+  - Uncomment and complete output values for security group ID, ARN, and IP count
+  - Add output for security group name
+  - _Requirements: 2.2, 5.4_
 
 - [ ] 5. Create Lambda function for automated updates
 
