@@ -30,3 +30,19 @@ output "protocol" {
   description = "Protocol configured for the security group rules"
   value       = var.protocol
 }
+
+# Lambda function outputs
+output "lambda_function_name" {
+  description = "Name of the Lambda function for automated updates"
+  value       = aws_lambda_function.cloudflare_updater.function_name
+}
+
+output "lambda_function_arn" {
+  description = "ARN of the Lambda function for automated updates"
+  value       = aws_lambda_function.cloudflare_updater.arn
+}
+
+output "sns_topic_arn" {
+  description = "ARN of the SNS topic for notifications (if configured)"
+  value       = var.notification_email != "" ? aws_sns_topic.notifications[0].arn : null
+}

@@ -120,3 +120,123 @@ resource "aws_security_group" "cloudflare_whitelist" {
     create_before_destroy = true
   }
 }
+
+# IAM role for Lambda function
+resource "aws_iam_role" "lambda_execution_role" {
+  name_prefix = "cloudflare-updater-lambda-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = local.common_tags
+}
+
+# IAM policy for Lambda function
+resource "aws_iam_role_policy" "lambda_policy" {
+  name_prefix = "cloudflare-updater-policy-"
+  role        = aws_iam_role.lambda_execution_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeSecurityGroups",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:RevokeSecurityGroupIngress"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sns:Publish"
+        ]
+        Resource = var.notification_email != "" ? aws_sns_topic.notifications[0].arn : "*"
+      }
+    ]
+  })
+}
+
+# CloudWatch Log Group for Lambda
+resource "aws_cloudwatch_log_group" "lambda_logs" {
+  name              = "/aws/lambda/cloudflare-ip-updater-${var.environment}"
+  retention_in_days = 14
+  tags              = local.common_tags
+}
+
+# SNS Topic for notifications (only if email is provided)
+resource "aws_sns_topic" "notifications" {
+  count = var.notification_email != "" ? 1 : 0
+  name  = "cloudflare-ip-updates-${var.environment}"
+  tags  = local.common_tags
+}
+
+# SNS Topic Subscription (only if email is provided)
+resource "aws_sns_topic_subscription" "email_notification" {
+  count     = var.notification_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.notifications[0].arn
+  protocol  = "email"
+  endpoint  = var.notification_email
+}
+
+# Create ZIP file for Lambda function
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  source_file = "${path.module}/lambda_function.py"
+  output_path = "${path.module}/lambda_function.zip"
+}
+
+# Lambda function for automated updates
+resource "aws_lambda_function" "cloudflare_updater" {
+  filename         = data.archive_file.lambda_zip.output_path
+  function_name    = "cloudflare-ip-updater-${var.environment}"
+  role            = aws_iam_role.lambda_execution_role.arn
+  handler         = "lambda_function.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 300
+  memory_size     = 256
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+
+  environment {
+    variables = {
+      SECURITY_GROUP_ID = aws_security_group.cloudflare_whitelist.id
+      SNS_TOPIC_ARN     = var.notification_email != "" ? aws_sns_topic.notifications[0].arn : ""
+      MAX_RETRIES       = "3"
+      RETRY_DELAY       = "5"
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy.lambda_policy,
+    aws_cloudwatch_log_group.lambda_logs
+  ]
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name        = "cloudflare-ip-updater-${var.environment}"
+      Description = "Lambda function to update Cloudflare IP ranges in security group"
+    }
+  )
+}

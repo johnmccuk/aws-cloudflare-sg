@@ -27,7 +27,7 @@
   - Add output for security group name
   - _Requirements: 2.2, 5.4_
 
-- [ ] 5. Create Lambda function for automated updates
+- [x] 5. Create Lambda function for automated updates
 
   - Write Python Lambda function to fetch current Cloudflare IP ranges
   - Implement logic to compare current IPs with existing security group rules
