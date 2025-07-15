@@ -11,14 +11,6 @@ terraform {
       version = "~> 3.0"
     }
   }
-
-  backend "s3" {
-    bucket         = "831926585319-terraform-states"
-    key            = "prod/aws-cloudflare-sg.tfstate"
-    encrypt        = true
-    region         = "eu-west-1"
-    use_lockfile   = true
-  }
 }
 
 provider "aws" {
