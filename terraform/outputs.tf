@@ -46,3 +46,24 @@ output "sns_topic_arn" {
   description = "ARN of the SNS topic for notifications (if configured)"
   value       = var.notification_email != "" ? aws_sns_topic.notifications[0].arn : null
 }
+
+# EventBridge outputs
+output "eventbridge_rule_name" {
+  description = "Name of the EventBridge rule for scheduled updates"
+  value       = aws_cloudwatch_event_rule.cloudflare_update_schedule.name
+}
+
+output "eventbridge_rule_arn" {
+  description = "ARN of the EventBridge rule for scheduled updates"
+  value       = aws_cloudwatch_event_rule.cloudflare_update_schedule.arn
+}
+
+output "update_schedule" {
+  description = "Configured schedule expression for automated updates"
+  value       = var.update_schedule
+}
+
+output "automation_enabled" {
+  description = "Whether automated updates are enabled"
+  value       = var.enable_automation
+}

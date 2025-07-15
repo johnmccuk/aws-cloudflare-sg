@@ -45,6 +45,17 @@ variable "update_schedule" {
   description = "Cron expression for automated updates"
   type        = string
   default     = "cron(0 2 * * ? *)"
+  
+  validation {
+    condition     = can(regex("^(rate\\(.*\\)|cron\\(.*\\))$", var.update_schedule))
+    error_message = "Update schedule must be a valid EventBridge schedule expression (rate() or cron() format)."
+  }
+}
+
+variable "enable_automation" {
+  description = "Enable automated updates via EventBridge scheduling"
+  type        = bool
+  default     = true
 }
 
 variable "notification_email" {

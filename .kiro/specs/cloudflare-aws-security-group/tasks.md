@@ -41,7 +41,7 @@
   - Create logging for all automation activities
   - _Requirements: 4.2, 4.4_
 
-- [ ] 7. Set up EventBridge scheduling for automated updates
+- [x] 7. Set up EventBridge scheduling for automated updates
 
   - Create EventBridge rule with configurable cron schedule
   - Configure Lambda function as target for scheduled events

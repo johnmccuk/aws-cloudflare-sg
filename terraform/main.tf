@@ -204,6 +204,13 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "dynamodb:DeleteItem"
         ]
         Resource = "arn:aws:dynamodb:*:*:table/terraform-state-lock*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "events:PutEvents"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -278,4 +285,45 @@ resource "aws_lambda_function" "cloudflare_updater" {
       Description = "Lambda function to update Cloudflare IP ranges in security group"
     }
   )
+}
+
+# EventBridge rule for scheduled Lambda execution
+resource "aws_cloudwatch_event_rule" "cloudflare_update_schedule" {
+  name                = "cloudflare-ip-update-${var.environment}"
+  description         = "Scheduled trigger for Cloudflare IP range updates"
+  schedule_expression = var.update_schedule
+  state               = var.enable_automation ? "ENABLED" : "DISABLED"
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name        = "cloudflare-ip-update-${var.environment}"
+      Description = "EventBridge rule for automated Cloudflare IP updates"
+    }
+  )
+}
+
+# EventBridge target to invoke Lambda function
+resource "aws_cloudwatch_event_target" "lambda_target" {
+  rule      = aws_cloudwatch_event_rule.cloudflare_update_schedule.name
+  target_id = "CloudflareUpdaterLambdaTarget"
+  arn       = aws_lambda_function.cloudflare_updater.arn
+
+  input = jsonencode({
+    source      = "eventbridge.scheduled"
+    detail_type = "Scheduled Event"
+    detail = {
+      trigger = "automated_update"
+      schedule = var.update_schedule
+    }
+  })
+}
+
+# Lambda permission for EventBridge to invoke the function
+resource "aws_lambda_permission" "allow_eventbridge" {
+  statement_id  = "AllowExecutionFromEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.cloudflare_updater.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.cloudflare_update_schedule.arn
 }
