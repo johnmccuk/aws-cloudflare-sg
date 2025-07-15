@@ -21,7 +21,7 @@
   - Configure rules for configurable ports with descriptive rule descriptions
   - _Requirements: 1.2, 1.3, 2.1, 2.2, 5.1, 5.2, 5.3_
 
-- [ ] 4. Enable Terraform outputs for security group information
+- [x] 4. Enable Terraform outputs for security group information
 
   - Uncomment and complete output values for security group ID, ARN, and IP count
   - Add output for security group name

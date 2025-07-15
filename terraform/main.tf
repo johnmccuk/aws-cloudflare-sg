@@ -12,35 +12,35 @@ locals {
     },
     var.tags
   )
-  
+
   security_group_name = "cloudflare-whitelist-${var.environment}"
-  
+
   # Parse IPv4 ranges from Cloudflare API response
   cloudflare_ipv4_raw = split("\n", data.http.cloudflare_ips_v4.response_body)
   cloudflare_ipv4_filtered = [
-    for ip in local.cloudflare_ipv4_raw : 
+    for ip in local.cloudflare_ipv4_raw :
     trimspace(ip) if trimspace(ip) != "" && !startswith(trimspace(ip), "#")
   ]
-  
+
   # Parse IPv6 ranges from Cloudflare API response
   cloudflare_ipv6_raw = split("\n", data.http.cloudflare_ips_v6.response_body)
   cloudflare_ipv6_filtered = [
-    for ip in local.cloudflare_ipv6_raw : 
+    for ip in local.cloudflare_ipv6_raw :
     trimspace(ip) if trimspace(ip) != "" && !startswith(trimspace(ip), "#")
   ]
-  
+
   # Validate CIDR format for IPv4 addresses
   cloudflare_ipv4_validated = [
     for cidr in local.cloudflare_ipv4_filtered :
     cidr if can(cidrhost(cidr, 0))
   ]
-  
+
   # Validate CIDR format for IPv6 addresses
   cloudflare_ipv6_validated = [
     for cidr in local.cloudflare_ipv6_filtered :
     cidr if can(cidrhost(cidr, 0))
   ]
-  
+
   # Combine all validated Cloudflare IP ranges
   all_cloudflare_ips = concat(
     local.cloudflare_ipv4_validated,
@@ -51,11 +51,11 @@ locals {
 # Data sources to fetch Cloudflare IP ranges
 data "http" "cloudflare_ips_v4" {
   url = "https://www.cloudflare.com/ips-v4"
-  
+
   request_headers = {
     Accept = "text/plain"
   }
-  
+
   lifecycle {
     postcondition {
       condition     = self.status_code == 200
@@ -66,11 +66,11 @@ data "http" "cloudflare_ips_v4" {
 
 data "http" "cloudflare_ips_v6" {
   url = "https://www.cloudflare.com/ips-v6"
-  
+
   request_headers = {
     Accept = "text/plain"
   }
-  
+
   lifecycle {
     postcondition {
       condition     = self.status_code == 200
@@ -89,29 +89,29 @@ resource "aws_security_group" "cloudflare_whitelist" {
   dynamic "ingress" {
     for_each = setproduct(local.all_cloudflare_ips, var.allowed_ports)
     content {
-      description = "Cloudflare IP range ${ingress.value[0]} - Port ${ingress.value[1]}"
-      from_port   = ingress.value[1]
-      to_port     = ingress.value[1]
-      protocol    = var.protocol
-      cidr_blocks = contains(ingress.value[0], ":") ? [] : [ingress.value[0]]
-      ipv6_cidr_blocks = contains(ingress.value[0], ":") ? [ingress.value[0]] : []
+      description      = "Cloudflare IP range ${ingress.value[0]} - Port ${ingress.value[1]}"
+      from_port        = ingress.value[1]
+      to_port          = ingress.value[1]
+      protocol         = var.protocol
+      cidr_blocks      = can(regex(":", ingress.value[0])) ? [] : [ingress.value[0]]
+      ipv6_cidr_blocks = can(regex(":", ingress.value[0])) ? [ingress.value[0]] : []
     }
   }
 
   # Explicit egress rules (default allows all outbound)
   egress {
-    description = "All outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    description      = "All outbound traffic"
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
   }
 
   tags = merge(
     local.common_tags,
     {
-      Name = local.security_group_name
+      Name        = local.security_group_name
       Description = "Cloudflare IP whitelist security group"
     }
   )
