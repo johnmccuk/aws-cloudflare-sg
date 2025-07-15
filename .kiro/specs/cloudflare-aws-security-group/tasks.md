@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Set up Terraform project structure and core configuration
+- [-] 1. Set up Terraform project structure and core configuration
 
   - Create directory structure with main.tf, variables.tf, outputs.tf, versions.tf
   - Define provider requirements for AWS and HTTP providers
