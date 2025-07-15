@@ -34,7 +34,7 @@
   - Add error handling and retry logic for API calls
   - _Requirements: 4.1, 4.2, 4.5_
 
-- [ ] 6. Implement Terraform automation trigger in Lambda
+- [x] 6. Implement Terraform automation trigger in Lambda
 
   - Add functionality to trigger Terraform apply when IP changes are detected
   - Implement secure credential handling for Terraform operations

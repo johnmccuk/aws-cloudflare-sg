@@ -173,6 +173,37 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "sns:Publish"
         ]
         Resource = var.notification_email != "" ? aws_sns_topic.notifications[0].arn : "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          var.terraform_config_s3_bucket != "" ? "arn:aws:s3:::${var.terraform_config_s3_bucket}/*" : "arn:aws:s3:::*/*",
+          var.terraform_state_s3_bucket != "" ? "arn:aws:s3:::${var.terraform_state_s3_bucket}/*" : "arn:aws:s3:::*/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = [
+          var.terraform_config_s3_bucket != "" ? "arn:aws:s3:::${var.terraform_config_s3_bucket}" : "arn:aws:s3:::*",
+          var.terraform_state_s3_bucket != "" ? "arn:aws:s3:::${var.terraform_state_s3_bucket}" : "arn:aws:s3:::*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = "arn:aws:dynamodb:*:*:table/terraform-state-lock*"
       }
     ]
   })
@@ -220,10 +251,18 @@ resource "aws_lambda_function" "cloudflare_updater" {
 
   environment {
     variables = {
-      SECURITY_GROUP_ID = aws_security_group.cloudflare_whitelist.id
-      SNS_TOPIC_ARN     = var.notification_email != "" ? aws_sns_topic.notifications[0].arn : ""
-      MAX_RETRIES       = "3"
-      RETRY_DELAY       = "5"
+      SECURITY_GROUP_ID           = aws_security_group.cloudflare_whitelist.id
+      SNS_TOPIC_ARN              = var.notification_email != "" ? aws_sns_topic.notifications[0].arn : ""
+      MAX_RETRIES                = "3"
+      RETRY_DELAY                = "5"
+      TERRAFORM_MODE             = var.terraform_mode
+      TERRAFORM_CLOUD_TOKEN      = var.terraform_cloud_token
+      TERRAFORM_WORKSPACE        = var.terraform_workspace
+      TERRAFORM_ORGANIZATION     = var.terraform_organization
+      TERRAFORM_CONFIG_S3_BUCKET = var.terraform_config_s3_bucket
+      TERRAFORM_CONFIG_S3_KEY    = var.terraform_config_s3_key
+      TERRAFORM_STATE_S3_BUCKET  = var.terraform_state_s3_bucket
+      TERRAFORM_STATE_S3_KEY     = var.terraform_state_s3_key
     }
   }
 

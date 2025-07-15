@@ -63,3 +63,58 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# Terraform automation variables
+variable "terraform_mode" {
+  description = "Terraform execution mode: 'direct' for local execution, 'cloud' for Terraform Cloud"
+  type        = string
+  default     = "direct"
+  
+  validation {
+    condition     = contains(["direct", "cloud"], var.terraform_mode)
+    error_message = "Terraform mode must be either 'direct' or 'cloud'."
+  }
+}
+
+variable "terraform_cloud_token" {
+  description = "Terraform Cloud API token (required if terraform_mode is 'cloud')"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "terraform_workspace" {
+  description = "Terraform Cloud workspace ID (required if terraform_mode is 'cloud')"
+  type        = string
+  default     = ""
+}
+
+variable "terraform_organization" {
+  description = "Terraform Cloud organization name (required if terraform_mode is 'cloud')"
+  type        = string
+  default     = ""
+}
+
+variable "terraform_config_s3_bucket" {
+  description = "S3 bucket containing Terraform configuration (required if terraform_mode is 'direct')"
+  type        = string
+  default     = ""
+}
+
+variable "terraform_config_s3_key" {
+  description = "S3 key for Terraform configuration file (required if terraform_mode is 'direct')"
+  type        = string
+  default     = ""
+}
+
+variable "terraform_state_s3_bucket" {
+  description = "S3 bucket for Terraform state storage (optional for direct mode)"
+  type        = string
+  default     = ""
+}
+
+variable "terraform_state_s3_key" {
+  description = "S3 key for Terraform state file (optional for direct mode)"
+  type        = string
+  default     = ""
+}
