@@ -129,3 +129,62 @@ variable "terraform_state_s3_key" {
   type        = string
   default     = ""
 }
+
+# State management and idempotency variables
+variable "enable_state_validation" {
+  description = "Enable enhanced state validation and drift detection"
+  type        = bool
+  default     = true
+}
+
+variable "enable_drift_detection" {
+  description = "Enable drift detection between expected and actual security group state"
+  type        = bool
+  default     = true
+}
+
+variable "ip_change_threshold_percent" {
+  description = "Percentage threshold for triggering replacement strategy when IP changes exceed this amount"
+  type        = number
+  default     = 30
+  
+  validation {
+    condition     = var.ip_change_threshold_percent >= 10 && var.ip_change_threshold_percent <= 100
+    error_message = "IP change threshold must be between 10 and 100 percent."
+  }
+}
+
+variable "max_ip_changes_per_update" {
+  description = "Maximum number of IP changes allowed per update before triggering replacement strategy"
+  type        = number
+  default     = 50
+  
+  validation {
+    condition     = var.max_ip_changes_per_update >= 1 && var.max_ip_changes_per_update <= 200
+    error_message = "Maximum IP changes per update must be between 1 and 200."
+  }
+}
+
+variable "enable_enhanced_lifecycle" {
+  description = "Enable enhanced lifecycle management with improved replacement strategies"
+  type        = bool
+  default     = false
+}
+
+# AWS service quota management variables
+variable "enable_quota_checking" {
+  description = "Enable AWS service quota checking and validation"
+  type        = bool
+  default     = true
+}
+
+variable "max_expected_cloudflare_ips" {
+  description = "Maximum expected number of Cloudflare IP ranges (for validation)"
+  type        = number
+  default     = 200
+  
+  validation {
+    condition     = var.max_expected_cloudflare_ips >= 50 && var.max_expected_cloudflare_ips <= 1000
+    error_message = "Maximum expected Cloudflare IPs must be between 50 and 1000."
+  }
+}

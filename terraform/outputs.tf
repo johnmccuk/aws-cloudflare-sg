@@ -108,3 +108,26 @@ output "cloudwatch_dashboard_url" {
   description = "URL of the CloudWatch dashboard for monitoring (if configured)"
   value       = var.notification_email != "" ? "https://${data.aws_region.current.name}.console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.name}#dashboards:name=${aws_cloudwatch_dashboard.cloudflare_updater[0].dashboard_name}" : null
 }
+
+# Enhanced state management outputs
+output "state_management_status" {
+  description = "Status of enhanced state management features"
+  value = {
+    state_validation_enabled = var.enable_state_validation
+    drift_detection_enabled  = var.enable_drift_detection
+    enhanced_lifecycle_enabled = var.enable_enhanced_lifecycle
+    ip_change_threshold_percent = var.ip_change_threshold_percent
+    max_ip_changes_per_update = var.max_ip_changes_per_update
+  }
+}
+
+# Additional security group outputs for multiple groups scenario
+output "additional_security_group_ids" {
+  description = "IDs of additional security groups (if multiple groups are required)"
+  value       = local.requires_multiple_security_groups ? aws_security_group.cloudflare_whitelist_additional[*].id : []
+}
+
+output "total_security_groups_created" {
+  description = "Total number of security groups created for Cloudflare IP ranges"
+  value       = 1 + (local.requires_multiple_security_groups ? length(aws_security_group.cloudflare_whitelist_additional) : 0)
+}

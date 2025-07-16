@@ -38,6 +38,23 @@ SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN', '')
 MAX_RETRIES = int(os.environ.get('MAX_RETRIES', '3'))
 RETRY_DELAY = int(os.environ.get('RETRY_DELAY', '5'))
 
+# State management configuration
+ENABLE_STATE_VALIDATION = os.environ.get('ENABLE_STATE_VALIDATION', 'true').lower() == 'true'
+ENABLE_DRIFT_DETECTION = os.environ.get('ENABLE_DRIFT_DETECTION', 'true').lower() == 'true'
+IP_CHANGE_THRESHOLD_PERCENT = int(os.environ.get('IP_CHANGE_THRESHOLD_PERCENT', '30'))
+MAX_IP_CHANGES_PER_UPDATE = int(os.environ.get('MAX_IP_CHANGES_PER_UPDATE', '50'))
+ENABLE_ENHANCED_LIFECYCLE = os.environ.get('ENABLE_ENHANCED_LIFECYCLE', 'false').lower() == 'true'
+
+# Quota management configuration
+ENABLE_QUOTA_CHECKING = os.environ.get('ENABLE_QUOTA_CHECKING', 'false').lower() == 'true'
+MAX_RULES_PER_SECURITY_GROUP = int(os.environ.get('MAX_RULES_PER_SECURITY_GROUP', '120'))
+MAX_SECURITY_GROUPS_PER_VPC = int(os.environ.get('MAX_SECURITY_GROUPS_PER_VPC', '2500'))
+CURRENT_SECURITY_GROUPS_COUNT = int(os.environ.get('CURRENT_SECURITY_GROUPS_COUNT', '0'))
+REQUIRES_MULTIPLE_GROUPS = os.environ.get('REQUIRES_MULTIPLE_GROUPS', 'false').lower() == 'true'
+SECURITY_GROUPS_NEEDED = int(os.environ.get('SECURITY_GROUPS_NEEDED', '1'))
+RULES_APPROACHING_LIMIT = os.environ.get('RULES_APPROACHING_LIMIT', 'false').lower() == 'true'
+MAX_EXPECTED_CLOUDFLARE_IPS = int(os.environ.get('MAX_EXPECTED_CLOUDFLARE_IPS', '200'))
+
 # Terraform automation configuration
 TERRAFORM_MODE = os.environ.get('TERRAFORM_MODE', 'direct')  # 'direct' or 'cloud'
 TERRAFORM_CLOUD_TOKEN = os.environ.get('TERRAFORM_CLOUD_TOKEN', '')
@@ -64,13 +81,26 @@ def lambda_handler(event, context):
         if not SECURITY_GROUP_ID:
             raise ValueError("SECURITY_GROUP_ID environment variable is required")
         
+        # Perform quota validation if enabled
+        if ENABLE_QUOTA_CHECKING:
+            validate_aws_service_quotas()
+        
         # Fetch current Cloudflare IP ranges
         current_ips = fetch_cloudflare_ips()
         logger.info(f"Retrieved {len(current_ips)} Cloudflare IP ranges")
         
+        # Validate IP count against expected maximum
+        if ENABLE_QUOTA_CHECKING and len(current_ips) > MAX_EXPECTED_CLOUDFLARE_IPS:
+            logger.warning(f"Cloudflare IP count ({len(current_ips)}) exceeds expected maximum ({MAX_EXPECTED_CLOUDFLARE_IPS})")
+            log_quota_warning(f"Cloudflare IP count exceeds expected maximum: {len(current_ips)} > {MAX_EXPECTED_CLOUDFLARE_IPS}")
+        
         # Get existing security group rules
         existing_ips = get_existing_security_group_ips()
         logger.info(f"Found {len(existing_ips)} existing IP ranges in security group")
+        
+        # Perform state validation and drift detection if enabled
+        if ENABLE_STATE_VALIDATION or ENABLE_DRIFT_DETECTION:
+            perform_state_validation(current_ips, existing_ips)
         
         # Compare IP sets to determine if changes are needed
         ips_to_add = current_ips - existing_ips
@@ -81,6 +111,11 @@ def lambda_handler(event, context):
             changes_made = False
         else:
             logger.info(f"Changes detected: {len(ips_to_add)} IPs to add, {len(ips_to_remove)} IPs to remove")
+            
+            # Check if changes require replacement strategy
+            if should_use_replacement_strategy(ips_to_add, ips_to_remove, existing_ips):
+                logger.info("Replacement strategy triggered due to significant IP changes")
+                log_replacement_strategy_trigger(len(ips_to_add), len(ips_to_remove), len(existing_ips))
             
             # Trigger Terraform automation to apply changes
             changes_made = trigger_terraform_automation(current_ips, existing_ips)
@@ -98,7 +133,9 @@ def lambda_handler(event, context):
             'body': json.dumps({
                 'message': 'Cloudflare IP update completed successfully',
                 'changes_made': changes_made,
-                'ip_count': len(current_ips)
+                'ip_count': len(current_ips),
+                'state_validation_enabled': ENABLE_STATE_VALIDATION,
+                'drift_detection_enabled': ENABLE_DRIFT_DETECTION
             })
         }
         
@@ -1016,3 +1053,710 @@ def log_cloudwatch_metrics(current_ips: Set[str], existing_ips: Set[str], change
     except Exception as e:
         logger.warning(f"Failed to log CloudWatch metrics: {str(e)}")
         # Don't raise exception as this is not critical to the main functionality
+d
+ef validate_aws_service_quotas():
+    """
+    Validate AWS service quotas to ensure we don't exceed limits.
+    """
+    try:
+        logger.info("Validating AWS service quotas")
+        
+        # Check security group count in VPC
+        if CURRENT_SECURITY_GROUPS_COUNT > (MAX_SECURITY_GROUPS_PER_VPC * 0.9):
+            warning_msg = f"Security groups approaching limit: {CURRENT_SECURITY_GROUPS_COUNT}/{MAX_SECURITY_GROUPS_PER_VPC} (90% threshold)"
+            logger.warning(warning_msg)
+            log_quota_warning(warning_msg)
+        
+        # Check if rules will exceed limits
+        if RULES_APPROACHING_LIMIT:
+            warning_msg = f"Security group rules approaching limit for current configuration"
+            logger.warning(warning_msg)
+            log_quota_warning(warning_msg)
+        
+        # Check if multiple security groups are needed
+        if REQUIRES_MULTIPLE_GROUPS:
+            info_msg = f"Multiple security groups required: {SECURITY_GROUPS_NEEDED} groups needed"
+            logger.info(info_msg)
+        
+        logger.info("AWS service quota validation completed")
+        
+    except Exception as e:
+        logger.error(f"Error validating AWS service quotas: {str(e)}")
+        raise
+
+
+def perform_state_validation(current_ips: Set[str], existing_ips: Set[str]):
+    """
+    Perform state validation and drift detection.
+    """
+    try:
+        logger.info("Performing state validation and drift detection")
+        
+        if ENABLE_DRIFT_DETECTION:
+            # Check for drift between expected and actual state
+            if current_ips != existing_ips:
+                drift_msg = f"State drift detected: Expected {len(current_ips)} IPs, found {len(existing_ips)} IPs"
+                logger.error(drift_msg)
+                
+                # Log detailed drift information
+                ips_missing = current_ips - existing_ips
+                ips_extra = existing_ips - current_ips
+                
+                if ips_missing:
+                    logger.error(f"Missing IP ranges: {sorted(list(ips_missing))}")
+                if ips_extra:
+                    logger.error(f"Extra IP ranges: {sorted(list(ips_extra))}")
+            else:
+                logger.info("No state drift detected - security group matches expected state")
+        
+        if ENABLE_STATE_VALIDATION:
+            # Validate IP count is within expected range
+            if len(current_ips) > MAX_EXPECTED_CLOUDFLARE_IPS:
+                validation_msg = f"IP count validation failed: {len(current_ips)} > {MAX_EXPECTED_CLOUDFLARE_IPS}"
+                logger.warning(validation_msg)
+                log_quota_warning(validation_msg)
+            
+            # Validate CIDR format for all IPs
+            invalid_cidrs = []
+            for ip in current_ips:
+                if not validate_cidr(ip):
+                    invalid_cidrs.append(ip)
+            
+            if invalid_cidrs:
+                validation_msg = f"Invalid CIDR formats detected: {invalid_cidrs}"
+                logger.error(validation_msg)
+                raise ValueError(validation_msg)
+        
+        logger.info("State validation completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Error during state validation: {str(e)}")
+        raise
+
+
+def should_use_replacement_strategy(ips_to_add: Set[str], ips_to_remove: Set[str], existing_ips: Set[str]) -> bool:
+    """
+    Determine if changes require replacement strategy based on thresholds.
+    """
+    try:
+        total_changes = len(ips_to_add) + len(ips_to_remove)
+        
+        # Check absolute change threshold
+        if total_changes > MAX_IP_CHANGES_PER_UPDATE:
+            logger.info(f"Replacement strategy triggered: {total_changes} changes exceed maximum {MAX_IP_CHANGES_PER_UPDATE}")
+            return True
+        
+        # Check percentage change threshold
+        if len(existing_ips) > 0:
+            change_percentage = (total_changes * 100) / len(existing_ips)
+            if change_percentage > IP_CHANGE_THRESHOLD_PERCENT:
+                logger.info(f"Replacement strategy triggered: {change_percentage:.1f}% change exceeds threshold {IP_CHANGE_THRESHOLD_PERCENT}%")
+                return True
+        
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error determining replacement strategy: {str(e)}")
+        return False
+
+
+def log_quota_warning(message: str):
+    """
+    Log quota warning for CloudWatch metric filtering.
+    """
+    logger.warning(f"QUOTA WARNING: {message}")
+
+
+def log_replacement_strategy_trigger(ips_to_add: int, ips_to_remove: int, existing_count: int):
+    """
+    Log replacement strategy trigger for CloudWatch metric filtering.
+    """
+    logger.info(f"Replacement strategy triggered: adding {ips_to_add}, removing {ips_to_remove}, existing {existing_count}")
+
+
+def create_detailed_notification(current_ips: Set[str], existing_ips: Set[str], changes_made: bool) -> str:
+    """
+    Create detailed notification message with state and quota information.
+    """
+    try:
+        ips_to_add = current_ips - existing_ips
+        ips_to_remove = existing_ips - current_ips
+        
+        notification = f"""
+Cloudflare IP Update Report
+==========================
+
+Status: {'SUCCESS - Changes Applied' if changes_made else 'SUCCESS - No Changes Needed'}
+Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}
+
+IP Range Summary:
+- Current Cloudflare IPs: {len(current_ips)}
+- Previous Security Group IPs: {len(existing_ips)}
+- IPs Added: {len(ips_to_add)}
+- IPs Removed: {len(ips_to_remove)}
+
+Configuration:
+- State Validation: {'Enabled' if ENABLE_STATE_VALIDATION else 'Disabled'}
+- Drift Detection: {'Enabled' if ENABLE_DRIFT_DETECTION else 'Disabled'}
+- Quota Checking: {'Enabled' if ENABLE_QUOTA_CHECKING else 'Disabled'}
+- Enhanced Lifecycle: {'Enabled' if ENABLE_ENHANCED_LIFECYCLE else 'Disabled'}
+"""
+
+        if ENABLE_QUOTA_CHECKING:
+            notification += f"""
+Quota Information:
+- Security Groups in VPC: {CURRENT_SECURITY_GROUPS_COUNT}/{MAX_SECURITY_GROUPS_PER_VPC}
+- Rules per Security Group Limit: {MAX_RULES_PER_SECURITY_GROUP}
+- Multiple Groups Required: {'Yes' if REQUIRES_MULTIPLE_GROUPS else 'No'}
+- Groups Needed: {SECURITY_GROUPS_NEEDED}
+"""
+
+        if changes_made and (ips_to_add or ips_to_remove):
+            if should_use_replacement_strategy(ips_to_add, ips_to_remove, existing_ips):
+                notification += "\nReplacement Strategy: TRIGGERED (significant changes detected)"
+            else:
+                notification += "\nReplacement Strategy: Not required"
+
+        if ips_to_add and len(ips_to_add) <= 10:
+            notification += f"\nNew IP Ranges Added:\n" + "\n".join(f"  - {ip}" for ip in sorted(ips_to_add))
+        elif ips_to_add:
+            notification += f"\nNew IP Ranges Added: {len(ips_to_add)} ranges (too many to list)"
+
+        if ips_to_remove and len(ips_to_remove) <= 10:
+            notification += f"\nIP Ranges Removed:\n" + "\n".join(f"  - {ip}" for ip in sorted(ips_to_remove))
+        elif ips_to_remove:
+            notification += f"\nIP Ranges Removed: {len(ips_to_remove)} ranges (too many to list)"
+
+        return notification.strip()
+        
+    except Exception as e:
+        logger.error(f"Error creating detailed notification: {str(e)}")
+        return f"Cloudflare IP update completed. Status: {'Changes Applied' if changes_made else 'No Changes Needed'}"
+
+
+def log_cloudwatch_metrics(current_ips: Set[str], existing_ips: Set[str], changes_made: bool):
+    """
+    Log custom CloudWatch metrics for monitoring with enhanced state information.
+    """
+    try:
+        cloudwatch = boto3.client('cloudwatch')
+        
+        # Basic metrics
+        metrics = [
+            {
+                'MetricName': 'IPRangesUpdated',
+                'Value': 1 if changes_made else 0,
+                'Unit': 'Count',
+                'Dimensions': [
+                    {'Name': 'Environment', 'Value': os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'unknown')},
+                    {'Name': 'UpdateType', 'Value': 'Automated'}
+                ]
+            },
+            {
+                'MetricName': 'SecurityGroupRulesCount',
+                'Value': len(current_ips),
+                'Unit': 'Count',
+                'Dimensions': [
+                    {'Name': 'Environment', 'Value': os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'unknown')},
+                    {'Name': 'SecurityGroupId', 'Value': SECURITY_GROUP_ID}
+                ]
+            }
+        ]
+        
+        # State management metrics
+        if ENABLE_STATE_VALIDATION or ENABLE_DRIFT_DETECTION:
+            ips_to_add = current_ips - existing_ips
+            ips_to_remove = existing_ips - current_ips
+            
+            metrics.extend([
+                {
+                    'MetricName': 'IPsAdded',
+                    'Value': len(ips_to_add),
+                    'Unit': 'Count',
+                    'Dimensions': [{'Name': 'Environment', 'Value': os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'unknown')}]
+                },
+                {
+                    'MetricName': 'IPsRemoved',
+                    'Value': len(ips_to_remove),
+                    'Unit': 'Count',
+                    'Dimensions': [{'Name': 'Environment', 'Value': os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'unknown')}]
+                },
+                {
+                    'MetricName': 'StateDriftDetected',
+                    'Value': 1 if (ips_to_add or ips_to_remove) else 0,
+                    'Unit': 'Count',
+                    'Dimensions': [{'Name': 'Environment', 'Value': os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'unknown')}]
+                }
+            ])
+        
+        # Quota management metrics
+        if ENABLE_QUOTA_CHECKING:
+            metrics.extend([
+                {
+                    'MetricName': 'SecurityGroupsInVPC',
+                    'Value': CURRENT_SECURITY_GROUPS_COUNT,
+                    'Unit': 'Count',
+                    'Dimensions': [{'Name': 'VPC', 'Value': 'current'}]
+                },
+                {
+                    'MetricName': 'MultipleGroupsRequired',
+                    'Value': 1 if REQUIRES_MULTIPLE_GROUPS else 0,
+                    'Unit': 'Count',
+                    'Dimensions': [{'Name': 'Environment', 'Value': os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'unknown')}]
+                }
+            ])
+        
+        # Send metrics to CloudWatch
+        for i in range(0, len(metrics), 20):  # CloudWatch allows max 20 metrics per call
+            batch = metrics[i:i+20]
+            cloudwatch.put_metric_data(
+                Namespace='CloudflareIPUpdater',
+                MetricData=batch
+            )
+        
+        logger.info(f"Logged {len(metrics)} CloudWatch metrics")
+        
+    except Exception as e:
+        logger.error(f"Error logging CloudWatch metrics: {str(e)}")
+        # Don't raise exception as this is not critical for the main functionality
+
+
+def send_notification(message: str, notification_type: str):
+    """
+    Send SNS notification with enhanced formatting.
+    """
+    try:
+        if not SNS_TOPIC_ARN:
+            logger.info("SNS topic not configured, skipping notification")
+            return
+        
+        subject = f"Cloudflare IP Update - {notification_type}"
+        
+        # Add environment context to subject if available
+        env_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', '').split('-')[-1] if os.environ.get('AWS_LAMBDA_FUNCTION_NAME') else 'unknown'
+        if env_name and env_name != 'unknown':
+            subject += f" ({env_name})"
+        
+        get_sns_client().publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=subject,
+            Message=message
+        )
+        
+        logger.info(f"Notification sent: {notification_type}")
+        
+        # Log custom metric for notification
+        try:
+            cloudwatch = boto3.client('cloudwatch')
+            cloudwatch.put_metric_data(
+                Namespace='CloudflareIPUpdater',
+                MetricData=[
+                    {
+                        'MetricName': 'NotificationsSent',
+                        'Value': 1,
+                        'Unit': 'Count',
+                        'Dimensions': [
+                            {'Name': 'NotificationType', 'Value': notification_type},
+                            {'Name': 'Environment', 'Value': env_name}
+                        ]
+                    }
+                ]
+            )
+        except Exception as metric_error:
+            logger.warning(f"Failed to log notification metric: {str(metric_error)}")
+        
+    except Exception as e:
+        logger.error(f"Error sending notification: {str(e)}")
+        # Don't raise exception as notification failure shouldn't stop the main process
+d
+ef validate_aws_service_quotas():
+    """
+    Validate AWS service quotas to ensure we don't exceed limits.
+    """
+    try:
+        logger.info("Validating AWS service quotas")
+        
+        if ENABLE_QUOTA_CHECKING:
+            # Check security group rules quota
+            if RULES_APPROACHING_LIMIT:
+                logger.warning(f"Security group rules approaching limit. Current usage is high.")
+                log_quota_warning("Security group rules approaching AWS service limit")
+            
+            # Check if multiple security groups are needed
+            if REQUIRES_MULTIPLE_GROUPS:
+                logger.info(f"Multiple security groups required: {SECURITY_GROUPS_NEEDED} groups needed")
+                log_quota_warning(f"Multiple security groups required due to rule limits: {SECURITY_GROUPS_NEEDED} groups")
+            
+            # Validate current security group count
+            if CURRENT_SECURITY_GROUPS_COUNT > (MAX_SECURITY_GROUPS_PER_VPC * 0.8):
+                logger.warning(f"Security groups per VPC approaching limit: {CURRENT_SECURITY_GROUPS_COUNT}/{MAX_SECURITY_GROUPS_PER_VPC}")
+                log_quota_warning(f"Security groups per VPC approaching limit: {CURRENT_SECURITY_GROUPS_COUNT}/{MAX_SECURITY_GROUPS_PER_VPC}")
+        
+        logger.info("AWS service quota validation completed")
+        
+    except Exception as e:
+        logger.error(f"Error validating AWS service quotas: {str(e)}")
+        raise
+
+
+def perform_state_validation(current_ips: Set[str], existing_ips: Set[str]):
+    """
+    Perform state validation and drift detection.
+    """
+    try:
+        logger.info("Performing state validation and drift detection")
+        
+        if ENABLE_STATE_VALIDATION:
+            logger.info("State validation enabled - checking for consistency")
+            
+            # Validate IP count is reasonable
+            if len(current_ips) == 0:
+                logger.error("No Cloudflare IPs retrieved - this indicates a problem")
+                raise ValueError("No Cloudflare IPs retrieved from API")
+            
+            if len(current_ips) > MAX_EXPECTED_CLOUDFLARE_IPS * 2:
+                logger.error(f"Cloudflare IP count ({len(current_ips)}) is unexpectedly high")
+                raise ValueError(f"Cloudflare IP count exceeds reasonable maximum: {len(current_ips)}")
+        
+        if ENABLE_DRIFT_DETECTION:
+            logger.info("Drift detection enabled - analyzing state differences")
+            
+            ips_to_add = current_ips - existing_ips
+            ips_to_remove = existing_ips - current_ips
+            
+            if ips_to_add or ips_to_remove:
+                logger.info(f"State drift detected: {len(ips_to_add)} IPs to add, {len(ips_to_remove)} IPs to remove")
+                
+                # Log detailed drift information
+                if ips_to_add:
+                    logger.info(f"New Cloudflare IPs detected: {sorted(list(ips_to_add))}")
+                if ips_to_remove:
+                    logger.info(f"Outdated IPs to remove: {sorted(list(ips_to_remove))}")
+                
+                # Log drift detection metric
+                log_state_drift_detected(len(ips_to_add), len(ips_to_remove))
+            else:
+                logger.info("No state drift detected - security group is up to date")
+        
+        logger.info("State validation and drift detection completed")
+        
+    except Exception as e:
+        logger.error(f"Error in state validation: {str(e)}")
+        raise
+
+
+def should_use_replacement_strategy(ips_to_add: Set[str], ips_to_remove: Set[str], existing_ips: Set[str]) -> bool:
+    """
+    Determine if changes require replacement strategy due to significant changes.
+    """
+    try:
+        total_changes = len(ips_to_add) + len(ips_to_remove)
+        
+        # Check absolute change threshold
+        if total_changes > MAX_IP_CHANGES_PER_UPDATE:
+            logger.info(f"Replacement strategy triggered: {total_changes} changes exceed maximum of {MAX_IP_CHANGES_PER_UPDATE}")
+            return True
+        
+        # Check percentage change threshold
+        if len(existing_ips) > 0:
+            change_percentage = (total_changes * 100) / len(existing_ips)
+            if change_percentage > IP_CHANGE_THRESHOLD_PERCENT:
+                logger.info(f"Replacement strategy triggered: {change_percentage:.1f}% change exceeds threshold of {IP_CHANGE_THRESHOLD_PERCENT}%")
+                return True
+        
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error determining replacement strategy: {str(e)}")
+        return False
+
+
+def log_quota_warning(message: str):
+    """
+    Log quota warning for CloudWatch metric filtering.
+    """
+    logger.warning(f"QUOTA WARNING: {message}")
+
+
+def log_state_drift_detected(ips_to_add_count: int, ips_to_remove_count: int):
+    """
+    Log state drift detection for CloudWatch metric filtering.
+    """
+    logger.error(f"State drift detected: {ips_to_add_count} IPs to add, {ips_to_remove_count} IPs to remove")
+
+
+def log_replacement_strategy_trigger(ips_to_add_count: int, ips_to_remove_count: int, existing_count: int):
+    """
+    Log replacement strategy trigger for CloudWatch metric filtering.
+    """
+    total_changes = ips_to_add_count + ips_to_remove_count
+    change_percentage = (total_changes * 100) / existing_count if existing_count > 0 else 0
+    
+    logger.info(f"Replacement strategy triggered: {total_changes} total changes ({change_percentage:.1f}% of existing {existing_count} IPs)")
+
+
+def log_cloudwatch_metrics(current_ips: Set[str], existing_ips: Set[str], changes_made: bool):
+    """
+    Log custom CloudWatch metrics for monitoring.
+    """
+    try:
+        cloudwatch = boto3.client('cloudwatch')
+        
+        # Log IP count metrics
+        cloudwatch.put_metric_data(
+            Namespace='CloudflareIPUpdater',
+            MetricData=[
+                {
+                    'MetricName': 'CloudflareIPCount',
+                    'Value': len(current_ips),
+                    'Unit': 'Count',
+                    'Dimensions': [
+                        {
+                            'Name': 'SecurityGroupId',
+                            'Value': SECURITY_GROUP_ID
+                        }
+                    ]
+                },
+                {
+                    'MetricName': 'SecurityGroupRulesCount',
+                    'Value': len(existing_ips),
+                    'Unit': 'Count',
+                    'Dimensions': [
+                        {
+                            'Name': 'SecurityGroupId',
+                            'Value': SECURITY_GROUP_ID
+                        }
+                    ]
+                },
+                {
+                    'MetricName': 'IPRangesUpdated',
+                    'Value': 1 if changes_made else 0,
+                    'Unit': 'Count',
+                    'Dimensions': [
+                        {
+                            'Name': 'SecurityGroupId',
+                            'Value': SECURITY_GROUP_ID
+                        }
+                    ]
+                }
+            ]
+        )
+        
+        logger.info("CloudWatch metrics logged successfully")
+        
+    except Exception as e:
+        logger.warning(f"Failed to log CloudWatch metrics: {str(e)}")
+
+
+def create_detailed_notification(current_ips: Set[str], existing_ips: Set[str], changes_made: bool) -> str:
+    """
+    Create detailed notification message for SNS.
+    """
+    try:
+        ips_to_add = current_ips - existing_ips
+        ips_to_remove = existing_ips - current_ips
+        
+        message_parts = [
+            "Cloudflare IP Update Report",
+            "=" * 30,
+            f"Security Group ID: {SECURITY_GROUP_ID}",
+            f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}",
+            "",
+            f"Current Cloudflare IPs: {len(current_ips)}",
+            f"Previous Security Group IPs: {len(existing_ips)}",
+            f"Changes Made: {'Yes' if changes_made else 'No'}",
+            ""
+        ]
+        
+        if changes_made:
+            message_parts.extend([
+                f"IPs Added: {len(ips_to_add)}",
+                f"IPs Removed: {len(ips_to_remove)}",
+                ""
+            ])
+            
+            if ips_to_add:
+                message_parts.extend([
+                    "New IP Ranges:",
+                    *[f"  + {ip}" for ip in sorted(ips_to_add)],
+                    ""
+                ])
+            
+            if ips_to_remove:
+                message_parts.extend([
+                    "Removed IP Ranges:",
+                    *[f"  - {ip}" for ip in sorted(ips_to_remove)],
+                    ""
+                ])
+        else:
+            message_parts.append("No changes were needed - security group is up to date.")
+        
+        # Add state management information
+        if ENABLE_STATE_VALIDATION or ENABLE_DRIFT_DETECTION:
+            message_parts.extend([
+                "",
+                "State Management:",
+                f"  State Validation: {'Enabled' if ENABLE_STATE_VALIDATION else 'Disabled'}",
+                f"  Drift Detection: {'Enabled' if ENABLE_DRIFT_DETECTION else 'Disabled'}",
+                f"  Enhanced Lifecycle: {'Enabled' if ENABLE_ENHANCED_LIFECYCLE else 'Disabled'}"
+            ])
+        
+        # Add quota information if enabled
+        if ENABLE_QUOTA_CHECKING:
+            message_parts.extend([
+                "",
+                "Quota Information:",
+                f"  Quota Checking: Enabled",
+                f"  Rules Approaching Limit: {'Yes' if RULES_APPROACHING_LIMIT else 'No'}",
+                f"  Multiple Groups Required: {'Yes' if REQUIRES_MULTIPLE_GROUPS else 'No'}"
+            ])
+            
+            if REQUIRES_MULTIPLE_GROUPS:
+                message_parts.append(f"  Security Groups Needed: {SECURITY_GROUPS_NEEDED}")
+        
+        return "\n".join(message_parts)
+        
+    except Exception as e:
+        logger.error(f"Error creating detailed notification: {str(e)}")
+        return f"Cloudflare IP update completed. Changes made: {changes_made}. IP count: {len(current_ips)}"
+
+
+def send_notification(message: str, notification_type: str = "INFO"):
+    """
+    Send notification via SNS.
+    """
+    try:
+        if not SNS_TOPIC_ARN:
+            logger.info("SNS topic not configured, skipping notification")
+            return
+        
+        subject = f"Cloudflare IP Update - {notification_type}"
+        
+        get_sns_client().publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=subject,
+            Message=message
+        )
+        
+        logger.info(f"Notification sent successfully: {notification_type}")
+        
+        # Log notification metric
+        try:
+            cloudwatch = boto3.client('cloudwatch')
+            cloudwatch.put_metric_data(
+                Namespace='CloudflareIPUpdater',
+                MetricData=[
+                    {
+                        'MetricName': 'NotificationsSent',
+                        'Value': 1,
+                        'Unit': 'Count',
+                        'Dimensions': [
+                            {
+                                'Name': 'NotificationType',
+                                'Value': notification_type
+                            }
+                        ]
+                    }
+                ]
+            )
+        except Exception as metric_error:
+            logger.warning(f"Failed to log notification metric: {str(metric_error)}")
+        
+    except Exception as e:
+        logger.error(f"Error sending notification: {str(e)}")
+
+
+def download_terraform_config(temp_dir: str):
+    """
+    Download Terraform configuration files from S3.
+    """
+    try:
+        bucket = TERRAFORM_CONFIG_S3_BUCKET
+        key = TERRAFORM_CONFIG_S3_KEY
+        
+        logger.info(f"Downloading Terraform config from s3://{bucket}/{key}")
+        
+        s3_client = boto3.client('s3')
+        
+        # Download and extract configuration
+        config_path = os.path.join(temp_dir, 'terraform-config.zip')
+        s3_client.download_file(bucket, key, config_path)
+        
+        # Extract if it's a zip file
+        if key.endswith('.zip'):
+            import zipfile
+            with zipfile.ZipFile(config_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            os.remove(config_path)
+        else:
+            # If it's a single file, rename it appropriately
+            target_path = os.path.join(temp_dir, 'main.tf')
+            os.rename(config_path, target_path)
+        
+        logger.info("Terraform configuration downloaded successfully")
+        
+    except Exception as e:
+        logger.error(f"Error downloading Terraform config: {str(e)}")
+        raise
+
+
+def setup_terraform_backend(temp_dir: str):
+    """
+    Set up Terraform backend configuration for state management.
+    """
+    try:
+        backend_config = f"""
+terraform {{
+  backend "s3" {{
+    bucket = "{TERRAFORM_STATE_S3_BUCKET}"
+    key    = "{TERRAFORM_STATE_S3_KEY}"
+    region = "{boto3.Session().region_name or 'us-east-1'}"
+  }}
+}}
+"""
+        
+        backend_file = os.path.join(temp_dir, 'backend.tf')
+        with open(backend_file, 'w') as f:
+            f.write(backend_config)
+        
+        logger.info("Terraform backend configuration created")
+        
+    except Exception as e:
+        logger.error(f"Error setting up Terraform backend: {str(e)}")
+        raise
+
+
+def run_terraform_command(command: List[str], working_dir: str) -> bool:
+    """
+    Run a Terraform command and return success status.
+    """
+    try:
+        logger.info(f"Running command: {' '.join(command)}")
+        
+        result = subprocess.run(
+            command,
+            cwd=working_dir,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        
+        if result.stdout:
+            logger.info(f"Command output: {result.stdout}")
+        
+        if result.stderr:
+            logger.warning(f"Command stderr: {result.stderr}")
+        
+        if result.returncode == 0:
+            logger.info(f"Command completed successfully: {' '.join(command)}")
+            return True
+        else:
+            logger.error(f"Command failed with return code {result.returncode}: {' '.join(command)}")
+            return False
+        
+    except subprocess.TimeoutExpired:
+        logger.error(f"Command timed out: {' '.join(command)}")
+        return False
+    except Exception as e:
+        logger.error(f"Error running command {' '.join(command)}: {str(e)}")
+        return False

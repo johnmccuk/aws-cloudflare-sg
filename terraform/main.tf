@@ -390,20 +390,29 @@ resource "aws_lambda_function" "cloudflare_updater" {
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
 
   environment {
-    variables = {
-      SECURITY_GROUP_ID           = aws_security_group.cloudflare_whitelist.id
-      SNS_TOPIC_ARN              = var.notification_email != "" ? aws_sns_topic.notifications[0].arn : ""
-      MAX_RETRIES                = "3"
-      RETRY_DELAY                = "5"
-      TERRAFORM_MODE             = var.terraform_mode
-      TERRAFORM_CLOUD_TOKEN      = var.terraform_cloud_token
-      TERRAFORM_WORKSPACE        = var.terraform_workspace
-      TERRAFORM_ORGANIZATION     = var.terraform_organization
-      TERRAFORM_CONFIG_S3_BUCKET = var.terraform_config_s3_bucket
-      TERRAFORM_CONFIG_S3_KEY    = var.terraform_config_s3_key
-      TERRAFORM_STATE_S3_BUCKET  = var.terraform_state_s3_bucket
-      TERRAFORM_STATE_S3_KEY     = var.terraform_state_s3_key
-    }
+    variables = merge(
+      {
+        SECURITY_GROUP_ID           = aws_security_group.cloudflare_whitelist.id
+        SNS_TOPIC_ARN              = var.notification_email != "" ? aws_sns_topic.notifications[0].arn : ""
+        MAX_RETRIES                = "3"
+        RETRY_DELAY                = "5"
+        TERRAFORM_MODE             = var.terraform_mode
+        TERRAFORM_CLOUD_TOKEN      = var.terraform_cloud_token
+        TERRAFORM_WORKSPACE        = var.terraform_workspace
+        TERRAFORM_ORGANIZATION     = var.terraform_organization
+        TERRAFORM_CONFIG_S3_BUCKET = var.terraform_config_s3_bucket
+        TERRAFORM_CONFIG_S3_KEY    = var.terraform_config_s3_key
+        TERRAFORM_STATE_S3_BUCKET  = var.terraform_state_s3_bucket
+        TERRAFORM_STATE_S3_KEY     = var.terraform_state_s3_key
+        # State management variables
+        ENABLE_STATE_VALIDATION    = tostring(var.enable_state_validation)
+        ENABLE_DRIFT_DETECTION     = tostring(var.enable_drift_detection)
+        IP_CHANGE_THRESHOLD_PERCENT = tostring(var.ip_change_threshold_percent)
+        MAX_IP_CHANGES_PER_UPDATE  = tostring(var.max_ip_changes_per_update)
+        ENABLE_ENHANCED_LIFECYCLE  = tostring(var.enable_enhanced_lifecycle)
+      },
+      local.quota_management_env_vars
+    )
   }
 
   depends_on = [
