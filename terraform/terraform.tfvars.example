@@ -1,0 +1,178 @@
+# Example Terraform variables file for Cloudflare AWS Security Group module
+# Copy this file to terraform.tfvars and customize for your environment
+#
+# This file provides examples for different deployment scenarios:
+# - Basic deployment (minimal configuration)
+# - Production deployment (full monitoring and automation)
+# - Development deployment (frequent updates, custom ports)
+# - Terraform Cloud integration
+# - Direct execution with S3 backend
+
+#==============================================================================
+# REQUIRED VARIABLES
+#==============================================================================
+
+vpc_id      = "vpc-12345678"  # Replace with your VPC ID
+environment = "production"    # Environment name for resource naming
+
+#==============================================================================
+# SECURITY GROUP CONFIGURATION
+#==============================================================================
+
+allowed_ports = [443]         # Ports to allow from Cloudflare IPs (HTTPS by default)
+protocol      = "tcp"         # Protocol for security group rules
+
+#==============================================================================
+# AUTOMATION CONFIGURATION
+#==============================================================================
+
+enable_automation = true                    # Enable automated IP range updates
+update_schedule   = "cron(0 2 * * ? *)"   # Daily at 2 AM UTC
+
+#==============================================================================
+# NOTIFICATION CONFIGURATION (Optional)
+#==============================================================================
+
+notification_email = "devops@company.com"  # Email for update notifications
+
+#==============================================================================
+# TERRAFORM EXECUTION MODE CONFIGURATION
+#==============================================================================
+# Choose either "direct" for local/CI execution or "cloud" for Terraform Cloud
+
+# Option 1: Direct Execution Mode (default)
+terraform_mode = "direct"
+# terraform_config_s3_bucket = "my-terraform-configs"     # S3 bucket for config files
+# terraform_config_s3_key    = "cloudflare-sg/config.zip" # S3 key for config
+# terraform_state_s3_bucket  = "my-terraform-state"       # S3 bucket for state
+# terraform_state_s3_key     = "cloudflare-sg/state.tfstate" # S3 key for state
+
+# Option 2: Terraform Cloud Mode
+# terraform_mode         = "cloud"
+# terraform_cloud_token  = "your-terraform-cloud-token"  # Set via environment variable
+# terraform_workspace    = "ws-abc123def456"             # Terraform Cloud workspace ID
+# terraform_organization = "my-organization"             # Terraform Cloud organization
+
+#==============================================================================
+# ADDITIONAL RESOURCE TAGS
+#==============================================================================
+tags = {
+  Project     = "web-infrastructure"
+  Owner       = "platform-team"
+  CostCenter  = "engineering"
+  Environment = "production"
+  ManagedBy   = "terraform"
+}
+
+#==============================================================================
+# DEPLOYMENT SCENARIO EXAMPLES
+#==============================================================================
+# Uncomment and modify one of the following examples based on your use case
+
+#------------------------------------------------------------------------------
+# SCENARIO 1: Development Environment
+#------------------------------------------------------------------------------
+# vpc_id      = "vpc-dev789012"
+# environment = "development"
+# allowed_ports = [80, 443, 8080, 3000]  # Additional ports for development
+# update_schedule = "cron(0 */6 * * ? *)" # Every 6 hours for testing
+# notification_email = "dev-alerts@company.com"
+# enable_automation = true
+# terraform_mode = "direct"
+# tags = {
+#   Environment = "development"
+#   AutoDelete  = "true"
+#   Project     = "web-dev"
+#   Owner       = "dev-team"
+# }
+
+#------------------------------------------------------------------------------
+# SCENARIO 2: Staging Environment with S3 Backend
+#------------------------------------------------------------------------------
+# vpc_id      = "vpc-staging345"
+# environment = "staging"
+# allowed_ports = [80, 443]
+# update_schedule = "cron(0 2 ? * SUN *)"  # Weekly on Sundays
+# notification_email = "staging-alerts@company.com"
+# terraform_mode = "direct"
+# terraform_config_s3_bucket = "company-terraform-configs"
+# terraform_config_s3_key = "staging/cloudflare-sg.zip"
+# terraform_state_s3_bucket = "company-terraform-state"
+# terraform_state_s3_key = "staging/cloudflare-sg.tfstate"
+# tags = {
+#   Environment = "staging"
+#   Project     = "web-infrastructure"
+#   Owner       = "platform-team"
+# }
+
+#------------------------------------------------------------------------------
+# SCENARIO 3: High-Traffic Production Environment
+#------------------------------------------------------------------------------
+# vpc_id      = "vpc-prod123456"
+# environment = "production"
+# allowed_ports = [80, 443, 8443]  # HTTP, HTTPS, and custom HTTPS
+# protocol = "tcp"
+# enable_automation = true
+# update_schedule = "cron(0 1,13 * * ? *)"  # Twice daily at 1 AM and 1 PM UTC
+# notification_email = "critical-alerts@company.com"
+# terraform_mode = "cloud"
+# terraform_cloud_token = "your-terraform-cloud-token"
+# terraform_workspace = "ws-prod123abc"
+# terraform_organization = "my-company"
+# tags = {
+#   Environment = "production"
+#   Criticality = "high"
+#   Backup      = "required"
+#   Monitoring  = "enhanced"
+#   Project     = "web-infrastructure"
+#   Owner       = "platform-team"
+# }
+
+#------------------------------------------------------------------------------
+# SCENARIO 4: Multi-Protocol Deployment
+#------------------------------------------------------------------------------
+# Note: This module creates one security group per protocol
+# For multiple protocols, deploy the module multiple times
+# vpc_id      = "vpc-multi123"
+# environment = "multi-protocol"
+# allowed_ports = [53]      # DNS
+# protocol      = "udp"     # UDP for DNS
+# enable_automation = true
+# update_schedule = "cron(0 3 * * ? *)"  # Daily at 3 AM UTC
+# notification_email = "dns-alerts@company.com"
+# tags = {
+#   Purpose = "dns-cloudflare"
+#   Protocol = "udp"
+#   Service = "dns"
+# }
+
+#------------------------------------------------------------------------------
+# SCENARIO 5: Minimal Configuration (Defaults)
+#------------------------------------------------------------------------------
+# vpc_id = "vpc-minimal123"
+# # All other values will use defaults:
+# # - environment = "prod"
+# # - allowed_ports = [443]
+# # - protocol = "tcp"
+# # - enable_automation = true
+# # - update_schedule = "cron(0 2 * * ? *)"
+# # - terraform_mode = "direct"
+
+#------------------------------------------------------------------------------
+# SCENARIO 6: Terraform Cloud Integration
+#------------------------------------------------------------------------------
+# vpc_id      = "vpc-cloud123"
+# environment = "production"
+# allowed_ports = [80, 443]
+# enable_automation = true
+# update_schedule = "cron(0 2 * * ? *)"
+# notification_email = "cloud-alerts@company.com"
+# terraform_mode = "cloud"
+# terraform_cloud_token = "your-terraform-cloud-token"  # Use TF_VAR_terraform_cloud_token env var
+# terraform_workspace = "ws-cloudflare-sg-prod"
+# terraform_organization = "my-organization"
+# tags = {
+#   Environment = "production"
+#   ManagedBy   = "terraform-cloud"
+#   Project     = "infrastructure"
+# }

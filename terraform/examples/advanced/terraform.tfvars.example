@@ -1,0 +1,38 @@
+# Example terraform.tfvars for advanced configuration
+# Copy this file to terraform.tfvars and customize for your environment
+
+# AWS Configuration
+aws_region = "us-west-2"
+
+# Required Variables
+vpc_id      = "vpc-12345678"  # Replace with your VPC ID
+environment = "production"    # Environment: development, staging, or production
+
+# Notification Configuration
+notification_email = "devops@company.com"  # Email for alerts and notifications
+
+# Terraform Cloud Configuration
+# Set these values according to your Terraform Cloud setup
+terraform_cloud_token  = "your-terraform-cloud-api-token"  # Consider using TF_VAR_terraform_cloud_token env var
+terraform_workspace    = "ws-abc123def456"                 # Your Terraform Cloud workspace ID
+terraform_organization = "my-organization"                 # Your Terraform Cloud organization name
+
+# Example configurations for different environments:
+
+# Production Environment
+# vpc_id      = "vpc-prod123456"
+# environment = "production"
+# notification_email = "production-alerts@company.com"
+# terraform_workspace = "ws-prod123abc"
+
+# Staging Environment  
+# vpc_id      = "vpc-staging789"
+# environment = "staging"
+# notification_email = "staging-alerts@company.com"
+# terraform_workspace = "ws-staging456def"
+
+# Development Environment
+# vpc_id      = "vpc-dev012345"
+# environment = "development"
+# notification_email = "dev-alerts@company.com"
+# terraform_workspace = "ws-dev789ghi"

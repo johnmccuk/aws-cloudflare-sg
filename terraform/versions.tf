@@ -21,9 +21,8 @@ terraform {
   }
 }
 
-provider "aws" {
-  region = "eu-west-1"
-}
+# AWS provider configuration should be provided by the calling module or root configuration
+# This allows the module to be used in any AWS region
 
 provider "http" {
   # HTTP provider for fetching Cloudflare IP ranges
