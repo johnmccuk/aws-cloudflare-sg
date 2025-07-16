@@ -23,8 +23,9 @@
 
 - [x] 4. Enable Terraform outputs for security group information
 
-  - Uncomment and complete output values for security group ID, ARN, and IP count
-  - Add output for security group name
+  - Complete output values for security group ID, ARN, name, and IP count
+  - Add outputs for Lambda function and EventBridge components
+  - Include monitoring and automation status outputs
   - _Requirements: 2.2, 5.4_
 
 - [x] 5. Create Lambda function for automated updates
@@ -36,69 +37,76 @@
 
 - [x] 6. Implement Terraform automation trigger in Lambda
 
-  - Add functionality to trigger Terraform apply when IP changes are detected
-  - Implement secure credential handling for Terraform operations
-  - Create logging for all automation activities
+  - Add functionality to trigger Terraform Cloud and local execution
+  - Implement secure credential handling for both modes
+  - Create comprehensive logging for all automation activities
   - _Requirements: 4.2, 4.4_
 
 - [x] 7. Set up EventBridge scheduling for automated updates
 
   - Create EventBridge rule with configurable cron schedule
   - Configure Lambda function as target for scheduled events
-  - Add Terraform variables for schedule configuration
+  - Add Terraform variables for schedule configuration and automation toggle
   - _Requirements: 4.1, 4.3_
 
-- [ ] 8. Add CloudWatch monitoring and SNS notifications
+- [x] 8. Add CloudWatch monitoring and SNS notifications
 
   - Create CloudWatch log group for Lambda function logging
   - Implement SNS topic and subscription for update notifications
-  - Add notification logic for successful and failed updates
+  - Add comprehensive CloudWatch alarms for errors, duration, and throttles
+  - Create CloudWatch dashboard for monitoring automation health
   - _Requirements: 4.4, 4.5_
 
-- [ ] 9. Implement IAM roles and policies for automation
+- [x] 9. Implement IAM roles and policies for automation
 
-  - Create IAM role for Lambda function with minimal required permissions
-  - Add policies for EC2 security group management and CloudWatch logging
-  - Configure cross-service permissions for EventBridge and SNS
+  - Create IAM role for Lambda function with comprehensive permissions
+  - Add policies for EC2, CloudWatch, SNS, S3, and DynamoDB access
+  - Configure cross-service permissions for EventBridge and Terraform operations
   - _Requirements: 4.1, 4.5_
 
-- [ ] 10. Add comprehensive error handling and validation
+- [x] 10. Add comprehensive error handling and validation
 
   - Implement error handling for Cloudflare API failures and timeouts
-  - Add validation for AWS service limits and quota checking
-  - Create fallback mechanisms for API unavailability scenarios
+  - Add fallback mechanisms for Terraform automation failures
+  - Create validation for AWS credentials and Terraform configuration
   - _Requirements: 1.4, 4.5_
 
-- [ ] 11. Create Terraform module packaging and documentation
+- [x] 11. Create comprehensive test suite
+
+  - Write unit tests for Lambda function automation and error scenarios
+  - Add tests for Terraform Cloud and local execution modes
+  - Include tests for IP parsing, validation, and monitoring functionality
+  - _Requirements: 1.4, 3.1, 4.5_
+
+- [ ] 12. Fix CloudWatch dashboard tags issue
+
+  - Remove unsupported tags attribute from aws_cloudwatch_dashboard resource
+  - Verify dashboard creation works correctly without tags
+  - _Requirements: 4.4_
+
+- [-] 13. Create Terraform module packaging and documentation
 
   - Structure code as reusable Terraform module with proper file organization
   - Add README.md with usage examples and variable documentation
   - Include example terraform.tfvars file with common configurations
   - _Requirements: 2.1, 2.2, 5.1_
 
-- [ ] 12. Implement idempotency and state management
+- [ ] 14. Implement configuration validation and examples
 
-  - Add logic to detect and handle existing security group rules
-  - Implement proper resource replacement when IP ranges change
-  - Add state validation and drift detection capabilities
+  - Create example configurations for different deployment scenarios
+  - Add validation for Terraform Cloud vs local execution requirements
+  - Implement pre-deployment validation checks for AWS resources
+  - _Requirements: 5.1, 5.2, 5.4_
+
+- [ ] 15. Add idempotency and state management enhancements
+
+  - Enhance state validation and drift detection capabilities
+  - Add logic for handling AWS service limits and quota checking
+  - Implement proper resource replacement strategies when IP ranges change significantly
   - _Requirements: 3.1, 3.2, 3.4_
 
-- [ ] 13. Add cleanup and destroy functionality
-
+- [ ] 16. Add cleanup and destroy functionality
   - Implement proper resource cleanup in Terraform destroy operations
   - Add Lambda function cleanup for automation components
   - Ensure all created AWS resources are properly tagged for identification
   - _Requirements: 3.3, 2.1_
-
-- [ ] 14. Create comprehensive test suite
-
-  - Write unit tests for IP parsing and validation logic
-  - Create integration tests for Terraform module deployment
-  - Add tests for Lambda function automation and error scenarios
-  - _Requirements: 1.4, 3.1, 4.5_
-
-- [ ] 15. Implement configuration validation and examples
-  - Add Terraform validation rules for all input variables
-  - Create example configurations for common use cases
-  - Implement pre-deployment validation checks for AWS resources
-  - _Requirements: 5.1, 5.2, 5.4_

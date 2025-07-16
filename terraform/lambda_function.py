@@ -85,10 +85,13 @@ def lambda_handler(event, context):
             # Trigger Terraform automation to apply changes
             changes_made = trigger_terraform_automation(current_ips, existing_ips)
         
-        # Send notification if changes were made
-        if changes_made and SNS_TOPIC_ARN:
+        # Log CloudWatch custom metrics for monitoring
+        log_cloudwatch_metrics(current_ips, existing_ips, changes_made)
+        
+        # Send notification for both successful changes and no-change scenarios
+        if SNS_TOPIC_ARN:
             notification_details = create_detailed_notification(current_ips, existing_ips, changes_made)
-            send_notification(notification_details)
+            send_notification(notification_details, "SUCCESS")
         
         return {
             'statusCode': 200,
@@ -105,7 +108,7 @@ def lambda_handler(event, context):
         
         # Send error notification
         if SNS_TOPIC_ARN:
-            send_notification(f"ERROR: {error_msg}")
+            send_notification(f"ERROR: {error_msg}", "ERROR")
         
         return {
             'statusCode': 500,
@@ -838,17 +841,178 @@ def create_detailed_notification(current_ips: Set[str], existing_ips: Set[str], 
         return f"Cloudflare IP ranges updated via Terraform automation. {len(current_ips)} IP ranges now configured."
 
 
-def send_notification(message: str):
+def send_notification(message: str, notification_type: str = "INFO"):
     """
-    Send SNS notification about the update.
+    Send SNS notification about the update with appropriate subject and formatting.
+    
+    Args:
+        message: The notification message content
+        notification_type: Type of notification (SUCCESS, ERROR, INFO)
     """
     try:
-        get_sns_client().publish(
+        # Determine subject based on notification type
+        subject_map = {
+            "SUCCESS": "✅ Cloudflare IP Update - Success",
+            "ERROR": "❌ Cloudflare IP Update - Error",
+            "INFO": "ℹ️ Cloudflare IP Update - Information"
+        }
+        
+        subject = subject_map.get(notification_type, "Cloudflare IP Update Notification")
+        
+        # Add timestamp and environment info to message
+        timestamp = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
+        environment = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'unknown').split('-')[-1] if 'AWS_LAMBDA_FUNCTION_NAME' in os.environ else 'unknown'
+        
+        formatted_message = f"""
+Environment: {environment}
+Timestamp: {timestamp}
+Security Group: {SECURITY_GROUP_ID}
+
+{message}
+
+---
+This is an automated notification from the Cloudflare IP updater Lambda function.
+"""
+        
+        # Publish to SNS
+        response = get_sns_client().publish(
             TopicArn=SNS_TOPIC_ARN,
-            Message=message,
-            Subject="Cloudflare IP Update Notification"
+            Message=formatted_message.strip(),
+            Subject=subject
         )
-        logger.info("Notification sent successfully")
+        
+        logger.info(f"Notification sent successfully - Type: {notification_type}")
+        logger.info(f"SNS Message ID: {response.get('MessageId', 'unknown')}")
         logger.info(f"Notification content preview: {message[:200]}...")
+        
+        # Log CloudWatch custom metric for monitoring
+        try:
+            cloudwatch = boto3.client('cloudwatch')
+            cloudwatch.put_metric_data(
+                Namespace='CloudflareIPUpdater',
+                MetricData=[
+                    {
+                        'MetricName': 'NotificationsSent',
+                        'Value': 1,
+                        'Unit': 'Count',
+                        'Dimensions': [
+                            {
+                                'Name': 'NotificationType',
+                                'Value': notification_type
+                            },
+                            {
+                                'Name': 'Environment',
+                                'Value': environment
+                            }
+                        ]
+                    }
+                ]
+            )
+            logger.info(f"CloudWatch metric logged for notification type: {notification_type}")
+        except Exception as metric_error:
+            logger.warning(f"Failed to log CloudWatch metric: {str(metric_error)}")
+        
     except Exception as e:
         logger.error(f"Error sending notification: {str(e)}")
+        # Try to send a basic error notification if the main one fails
+        try:
+            get_sns_client().publish(
+                TopicArn=SNS_TOPIC_ARN,
+                Message=f"Failed to send detailed notification. Error: {str(e)}\nOriginal message type: {notification_type}",
+                Subject="❌ Cloudflare IP Update - Notification Error"
+            )
+        except Exception as fallback_error:
+            logger.error(f"Failed to send fallback notification: {str(fallback_error)}")
+
+
+def log_cloudwatch_metrics(current_ips: Set[str], existing_ips: Set[str], changes_made: bool):
+    """
+    Log custom CloudWatch metrics for monitoring and dashboard display.
+    """
+    try:
+        cloudwatch = boto3.client('cloudwatch')
+        environment = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'unknown').split('-')[-1] if 'AWS_LAMBDA_FUNCTION_NAME' in os.environ else 'unknown'
+        
+        # Calculate metrics
+        ips_to_add = current_ips - existing_ips
+        ips_to_remove = existing_ips - current_ips
+        total_rule_count = len(current_ips)
+        
+        # Prepare metric data
+        metric_data = [
+            {
+                'MetricName': 'IPRangesUpdated',
+                'Value': 1 if changes_made else 0,
+                'Unit': 'Count',
+                'Dimensions': [
+                    {
+                        'Name': 'Environment',
+                        'Value': environment
+                    }
+                ]
+            },
+            {
+                'MetricName': 'SecurityGroupRulesCount',
+                'Value': total_rule_count,
+                'Unit': 'Count',
+                'Dimensions': [
+                    {
+                        'Name': 'Environment',
+                        'Value': environment
+                    }
+                ]
+            },
+            {
+                'MetricName': 'IPRangesAdded',
+                'Value': len(ips_to_add),
+                'Unit': 'Count',
+                'Dimensions': [
+                    {
+                        'Name': 'Environment',
+                        'Value': environment
+                    }
+                ]
+            },
+            {
+                'MetricName': 'IPRangesRemoved',
+                'Value': len(ips_to_remove),
+                'Unit': 'Count',
+                'Dimensions': [
+                    {
+                        'Name': 'Environment',
+                        'Value': environment
+                    }
+                ]
+            },
+            {
+                'MetricName': 'AutomationExecutions',
+                'Value': 1,
+                'Unit': 'Count',
+                'Dimensions': [
+                    {
+                        'Name': 'Environment',
+                        'Value': environment
+                    },
+                    {
+                        'Name': 'ChangesDetected',
+                        'Value': 'Yes' if changes_made else 'No'
+                    }
+                ]
+            }
+        ]
+        
+        # Send metrics to CloudWatch
+        cloudwatch.put_metric_data(
+            Namespace='CloudflareIPUpdater',
+            MetricData=metric_data
+        )
+        
+        logger.info(f"CloudWatch metrics logged successfully:")
+        logger.info(f"  - IP ranges updated: {1 if changes_made else 0}")
+        logger.info(f"  - Total security group rules: {total_rule_count}")
+        logger.info(f"  - IP ranges added: {len(ips_to_add)}")
+        logger.info(f"  - IP ranges removed: {len(ips_to_remove)}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to log CloudWatch metrics: {str(e)}")
+        # Don't raise exception as this is not critical to the main functionality

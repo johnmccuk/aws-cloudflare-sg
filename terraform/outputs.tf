@@ -67,3 +67,44 @@ output "automation_enabled" {
   description = "Whether automated updates are enabled"
   value       = var.enable_automation
 }
+
+# CloudWatch monitoring outputs
+output "cloudwatch_log_group_name" {
+  description = "Name of the CloudWatch log group for Lambda function"
+  value       = aws_cloudwatch_log_group.lambda_logs.name
+}
+
+output "cloudwatch_log_group_arn" {
+  description = "ARN of the CloudWatch log group for Lambda function"
+  value       = aws_cloudwatch_log_group.lambda_logs.arn
+}
+
+output "cloudwatch_error_alarm_name" {
+  description = "Name of the CloudWatch alarm for Lambda errors (if configured)"
+  value       = var.notification_email != "" ? aws_cloudwatch_metric_alarm.lambda_error_alarm[0].alarm_name : null
+}
+
+output "cloudwatch_duration_alarm_name" {
+  description = "Name of the CloudWatch alarm for Lambda duration (if configured)"
+  value       = var.notification_email != "" ? aws_cloudwatch_metric_alarm.lambda_duration_alarm[0].alarm_name : null
+}
+
+output "cloudwatch_throttle_alarm_name" {
+  description = "Name of the CloudWatch alarm for Lambda throttles (if configured)"
+  value       = var.notification_email != "" ? aws_cloudwatch_metric_alarm.lambda_throttle_alarm[0].alarm_name : null
+}
+
+output "cloudwatch_success_alarm_name" {
+  description = "Name of the CloudWatch alarm for monitoring automation health (if configured)"
+  value       = var.notification_email != "" ? aws_cloudwatch_metric_alarm.lambda_success_alarm[0].alarm_name : null
+}
+
+output "cloudwatch_dashboard_name" {
+  description = "Name of the CloudWatch dashboard for monitoring (if configured)"
+  value       = var.notification_email != "" ? aws_cloudwatch_dashboard.cloudflare_updater[0].dashboard_name : null
+}
+
+output "cloudwatch_dashboard_url" {
+  description = "URL of the CloudWatch dashboard for monitoring (if configured)"
+  value       = var.notification_email != "" ? "https://${data.aws_region.current.name}.console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.name}#dashboards:name=${aws_cloudwatch_dashboard.cloudflare_updater[0].dashboard_name}" : null
+}

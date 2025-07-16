@@ -211,6 +211,13 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "events:PutEvents"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricData"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -220,14 +227,84 @@ resource "aws_iam_role_policy" "lambda_policy" {
 resource "aws_cloudwatch_log_group" "lambda_logs" {
   name              = "/aws/lambda/cloudflare-ip-updater-${var.environment}"
   retention_in_days = 14
-  tags              = local.common_tags
+  tags = merge(
+    local.common_tags,
+    {
+      Name        = "cloudflare-ip-updater-logs-${var.environment}"
+      Description = "CloudWatch log group for Cloudflare IP updater Lambda function"
+    }
+  )
+}
+
+# CloudWatch Alarm for Lambda function errors
+resource "aws_cloudwatch_metric_alarm" "lambda_error_alarm" {
+  count               = var.notification_email != "" ? 1 : 0
+  alarm_name          = "cloudflare-ip-updater-errors-${var.environment}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "0"
+  alarm_description   = "This metric monitors errors in the Cloudflare IP updater Lambda function"
+  alarm_actions       = [aws_sns_topic.notifications[0].arn]
+  ok_actions          = [aws_sns_topic.notifications[0].arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = aws_lambda_function.cloudflare_updater.function_name
+  }
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name        = "cloudflare-ip-updater-errors-${var.environment}"
+      Description = "CloudWatch alarm for Lambda function errors"
+    }
+  )
+}
+
+# CloudWatch Alarm for Lambda function duration
+resource "aws_cloudwatch_metric_alarm" "lambda_duration_alarm" {
+  count               = var.notification_email != "" ? 1 : 0
+  alarm_name          = "cloudflare-ip-updater-duration-${var.environment}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "Duration"
+  namespace           = "AWS/Lambda"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "240000" # 4 minutes (function timeout is 5 minutes)
+  alarm_description   = "This metric monitors duration of the Cloudflare IP updater Lambda function"
+  alarm_actions       = [aws_sns_topic.notifications[0].arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = aws_lambda_function.cloudflare_updater.function_name
+  }
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name        = "cloudflare-ip-updater-duration-${var.environment}"
+      Description = "CloudWatch alarm for Lambda function duration"
+    }
+  )
 }
 
 # SNS Topic for notifications (only if email is provided)
 resource "aws_sns_topic" "notifications" {
   count = var.notification_email != "" ? 1 : 0
   name  = "cloudflare-ip-updates-${var.environment}"
-  tags  = local.common_tags
+  
+  tags = merge(
+    local.common_tags,
+    {
+      Name        = "cloudflare-ip-updates-${var.environment}"
+      Description = "SNS topic for Cloudflare IP update notifications"
+    }
+  )
 }
 
 # SNS Topic Subscription (only if email is provided)
@@ -236,6 +313,62 @@ resource "aws_sns_topic_subscription" "email_notification" {
   topic_arn = aws_sns_topic.notifications[0].arn
   protocol  = "email"
   endpoint  = var.notification_email
+}
+
+# CloudWatch Alarm for Lambda function throttles
+resource "aws_cloudwatch_metric_alarm" "lambda_throttle_alarm" {
+  count               = var.notification_email != "" ? 1 : 0
+  alarm_name          = "cloudflare-ip-updater-throttles-${var.environment}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "Throttles"
+  namespace           = "AWS/Lambda"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "0"
+  alarm_description   = "This metric monitors throttles in the Cloudflare IP updater Lambda function"
+  alarm_actions       = [aws_sns_topic.notifications[0].arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = aws_lambda_function.cloudflare_updater.function_name
+  }
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name        = "cloudflare-ip-updater-throttles-${var.environment}"
+      Description = "CloudWatch alarm for Lambda function throttles"
+    }
+  )
+}
+
+# CloudWatch Alarm for successful Lambda invocations (for monitoring automation health)
+resource "aws_cloudwatch_metric_alarm" "lambda_success_alarm" {
+  count               = var.notification_email != "" ? 1 : 0
+  alarm_name          = "cloudflare-ip-updater-no-invocations-${var.environment}"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = "3"
+  metric_name         = "Invocations"
+  namespace           = "AWS/Lambda"
+  period              = "86400" # 24 hours
+  statistic           = "Sum"
+  threshold           = "1"
+  alarm_description   = "This alarm triggers when the Cloudflare IP updater hasn't run for 3 days"
+  alarm_actions       = [aws_sns_topic.notifications[0].arn]
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    FunctionName = aws_lambda_function.cloudflare_updater.function_name
+  }
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name        = "cloudflare-ip-updater-no-invocations-${var.environment}"
+      Description = "CloudWatch alarm for monitoring automation health"
+    }
+  )
 }
 
 # Create ZIP file for Lambda function
@@ -327,3 +460,119 @@ resource "aws_lambda_permission" "allow_eventbridge" {
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.cloudflare_update_schedule.arn
 }
+
+# CloudWatch Dashboard for monitoring
+resource "aws_cloudwatch_dashboard" "cloudflare_updater" {
+  count          = var.notification_email != "" ? 1 : 0
+  dashboard_name = "cloudflare-ip-updater-${var.environment}"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 8
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.cloudflare_updater.function_name],
+            [".", "Errors", ".", "."],
+            [".", "Invocations", ".", "."],
+            [".", "Throttles", ".", "."]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "Lambda Function Metrics"
+          period  = 300
+          stat    = "Sum"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 8
+        y      = 0
+        width  = 8
+        height = 6
+
+        properties = {
+          metrics = [
+            ["CloudflareIPUpdater", "NotificationsSent", "NotificationType", "SUCCESS"],
+            [".", ".", ".", "ERROR"],
+            [".", ".", ".", "INFO"]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "Notifications Sent"
+          period  = 300
+          stat    = "Sum"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 16
+        y      = 0
+        width  = 8
+        height = 6
+
+        properties = {
+          metrics = [
+            ["CloudflareIPUpdater", "IPRangesUpdated", "Environment", var.environment],
+            [".", "SecurityGroupRulesCount", ".", "."]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "IP Range Updates"
+          period  = 3600
+          stat    = "Average"
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 6
+        width  = 24
+        height = 6
+
+        properties = {
+          query   = "SOURCE '${aws_cloudwatch_log_group.lambda_logs.name}'\n| fields @timestamp, @message\n| filter @message like /SUCCESS|ERROR|Changes detected|No changes needed/\n| sort @timestamp desc\n| limit 50"
+          region  = data.aws_region.current.name
+          title   = "Recent Update Activity"
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 12
+        width  = 12
+        height = 6
+
+        properties = {
+          query   = "SOURCE '${aws_cloudwatch_log_group.lambda_logs.name}'\n| fields @timestamp, @message\n| filter @message like /ERROR|Failed|Exception/\n| sort @timestamp desc\n| limit 25"
+          region  = data.aws_region.current.name
+          title   = "Error Logs"
+        }
+      },
+      {
+        type   = "log"
+        x      = 12
+        y      = 12
+        width  = 12
+        height = 6
+
+        properties = {
+          query   = "SOURCE '${aws_cloudwatch_log_group.lambda_logs.name}'\n| fields @timestamp, @message\n| filter @message like /Terraform|automation/\n| sort @timestamp desc\n| limit 25"
+          region  = data.aws_region.current.name
+          title   = "Terraform Automation Logs"
+        }
+      }
+    ]
+  })
+}
+
+# Data source for current AWS region
+data "aws_region" "current" {}
