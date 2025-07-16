@@ -1,0 +1,37 @@
+# AWS Configuration
+aws_region  = "us-west-2"
+vpc_id      = "vpc-0123456789abcdef0"
+environment = "production"
+
+# Networking Configuration
+allowed_ports     = [443, 80]
+protocol          = "tcp"
+public_subnet_ids = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+
+# Terraform Cloud Configuration
+terraform_organization   = "your-org-name"
+terraform_workspace_name = "cloudflare-security-group-prod"
+terraform_workspace_id   = "ws-abc123def456"
+terraform_cloud_token    = "your-terraform-cloud-api-token"
+
+# Automation Configuration
+enable_automation = true
+update_schedule   = "cron(0 2 * * ? *)"  # Daily at 2 AM UTC
+
+# Monitoring Configuration
+notification_email  = "devops-team@yourcompany.com"
+log_retention_days  = 30
+
+# Example Resources (optional)
+create_example_alb    = false
+ssl_certificate_arn   = "arn:aws:acm:us-west-2:123456789012:certificate/12345678-1234-1234-1234-123456789012"
+
+# Tagging
+tags = {
+  Project     = "CloudflareIntegration"
+  Owner       = "DevOpsTeam"
+  Environment = "Production"
+  CostCenter  = "Infrastructure"
+  Compliance  = "Required"
+  Team        = "Platform"
+}
