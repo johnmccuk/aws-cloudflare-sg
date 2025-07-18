@@ -1,0 +1,37 @@
+# Example Terraform variables file for the basic Cloudflare AWS Security Group example
+# Copy this file to terraform.tfvars and customize the values for your environment
+
+# AWS Configuration
+aws_region = "us-east-1"  # Change to your preferred AWS region
+
+# VPC Configuration
+# Leave empty to use the default VPC, or specify your VPC ID
+vpc_id = ""  # Example: "vpc-12345678"
+
+# Environment Configuration
+environment = "dev"  # Options: dev, staging, prod, test, etc.
+
+# Notification Configuration (Optional)
+# Provide an email address to receive notifications about IP updates
+# Leave empty to disable notifications
+notification_email = ""  # Example: "admin@example.com"
+
+# Example configurations for different scenarios:
+
+# Development Environment
+# aws_region = "us-east-1"
+# vpc_id = ""
+# environment = "dev"
+# notification_email = ""
+
+# Staging Environment
+# aws_region = "us-west-2"
+# vpc_id = "vpc-staging123"
+# environment = "staging"
+# notification_email = "devops@company.com"
+
+# Production Environment
+# aws_region = "eu-west-1"
+# vpc_id = "vpc-prod456"
+# environment = "prod"
+# notification_email = "alerts@company.com"

@@ -124,12 +124,12 @@ output "state_management_status" {
 # Additional security group outputs for multiple groups scenario
 output "additional_security_group_ids" {
   description = "IDs of additional security groups (if multiple groups are required)"
-  value       = local.requires_multiple_security_groups ? aws_security_group.cloudflare_whitelist_additional[*].id : []
+  value       = []
 }
 
 output "total_security_groups_created" {
   description = "Total number of security groups created for Cloudflare IP ranges"
-  value       = 1 + (local.requires_multiple_security_groups ? length(aws_security_group.cloudflare_whitelist_additional) : 0)
+  value       = 1
 }
 
 # Cleanup and destroy functionality outputs
@@ -146,10 +146,9 @@ output "cleanup_function_arn" {
 output "cleanup_resources_inventory" {
   description = "Inventory of all resources that will be cleaned up during destroy"
   value = {
-    security_groups = concat(
-      [aws_security_group.cloudflare_whitelist.id],
-      local.requires_multiple_security_groups ? aws_security_group.cloudflare_whitelist_additional[*].id : []
-    )
+    security_groups = [
+      aws_security_group.cloudflare_whitelist.id
+    ]
     lambda_functions = concat(
       [aws_lambda_function.cloudflare_updater.function_name],
       var.enable_automation ? [aws_lambda_function.cleanup_function[0].function_name] : []
