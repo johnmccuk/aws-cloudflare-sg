@@ -9,6 +9,46 @@ locals {
       Purpose     = "Cloudflare IP Whitelist"
       ManagedBy   = "Terraform"
       LastUpdated = timestamp()
+      # Cleanup identification tags
+      CleanupGroup = "cloudflare-ip-updater-${var.environment}"
+      ResourceType = "automation"
+      DestroyOrder = "managed"
+      # Additional cleanup tags for better resource identification
+      Module      = "cloudflare-aws-security-group"
+      Component   = "core"
+      Cleanup     = "required"
+      # Enhanced tagging for comprehensive resource identification
+      Project     = "cloudflare-ip-automation"
+      Owner       = "terraform"
+      CostCenter  = var.cost_center != "" ? var.cost_center : "infrastructure"
+      # Destroy and cleanup specific tags
+      TerraformManaged = "true"
+      AutoCleanup      = "enabled"
+      CleanupPriority  = "high"
+      ResourceGroup    = "cloudflare-security-automation"
+      # Operational tags
+      BackupRequired   = "false"
+      MonitoringLevel  = "standard"
+      # Compliance and governance tags
+      DataClassification = "internal"
+      ComplianceScope    = "security-automation"
+      # Cleanup workflow tags
+      CleanupWorkflow    = "terraform-destroy"
+      CleanupAutomation  = "lambda-function"
+      ResourceLifecycle  = "managed"
+      DestroyMethod      = "terraform"
+      # Resource dependency tags
+      DependencyLevel    = "core"
+      CleanupSequence    = "automated"
+      ResourceCategory   = "security"
+      # Resource identification for cleanup
+      ResourceIdentifier = "cloudflare-ip-updater"
+      DeploymentId      = "cloudflare-${var.environment}"
+      ServiceName       = "cloudflare-ip-automation"
+      # Cleanup automation tags
+      CleanupEnabled    = "true"
+      CleanupMethod     = "automated"
+      CleanupScript     = "cleanup.sh"
     },
     var.tags
   )
@@ -410,8 +450,10 @@ resource "aws_lambda_function" "cloudflare_updater" {
         IP_CHANGE_THRESHOLD_PERCENT = tostring(var.ip_change_threshold_percent)
         MAX_IP_CHANGES_PER_UPDATE  = tostring(var.max_ip_changes_per_update)
         ENABLE_ENHANCED_LIFECYCLE  = tostring(var.enable_enhanced_lifecycle)
-      },
-      local.quota_management_env_vars
+        # Quota management variables
+        ENABLE_QUOTA_CHECKING      = tostring(var.enable_quota_checking)
+        MAX_EXPECTED_CLOUDFLARE_IPS = tostring(var.max_expected_cloudflare_ips)
+      }
     )
   }
 

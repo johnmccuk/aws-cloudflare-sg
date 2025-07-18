@@ -128,6 +128,7 @@ resource "aws_cloudwatch_metric_alarm" "quota_warning_alarm" {
     {
       Name        = "cloudflare-ip-quota-warning-${var.environment}"
       Description = "CloudWatch alarm for AWS service quota warnings"
+      Component   = "quota-management"
     }
   )
 }
@@ -179,6 +180,7 @@ resource "aws_security_group" "cloudflare_whitelist_additional" {
       Description = "Additional Cloudflare IP whitelist security group (${count.index + 2})"
       GroupNumber = count.index + 2
       TotalGroups = local.security_groups_needed
+      Component   = "additional-security-group"
     }
   )
 

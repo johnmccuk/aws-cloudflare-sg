@@ -131,3 +131,76 @@ output "total_security_groups_created" {
   description = "Total number of security groups created for Cloudflare IP ranges"
   value       = 1 + (local.requires_multiple_security_groups ? length(aws_security_group.cloudflare_whitelist_additional) : 0)
 }
+
+# Cleanup and destroy functionality outputs
+output "cleanup_function_name" {
+  description = "Name of the cleanup Lambda function (if automation is enabled)"
+  value       = var.enable_automation ? aws_lambda_function.cleanup_function[0].function_name : null
+}
+
+output "cleanup_function_arn" {
+  description = "ARN of the cleanup Lambda function (if automation is enabled)"
+  value       = var.enable_automation ? aws_lambda_function.cleanup_function[0].arn : null
+}
+
+output "cleanup_resources_inventory" {
+  description = "Inventory of all resources that will be cleaned up during destroy"
+  value = {
+    security_groups = concat(
+      [aws_security_group.cloudflare_whitelist.id],
+      local.requires_multiple_security_groups ? aws_security_group.cloudflare_whitelist_additional[*].id : []
+    )
+    lambda_functions = concat(
+      [aws_lambda_function.cloudflare_updater.function_name],
+      var.enable_automation ? [aws_lambda_function.cleanup_function[0].function_name] : []
+    )
+    cloudwatch_log_groups = concat(
+      [aws_cloudwatch_log_group.lambda_logs.name],
+      var.enable_automation ? [aws_cloudwatch_log_group.cleanup_lambda_logs[0].name] : []
+    )
+    sns_topics = var.notification_email != "" ? [aws_sns_topic.notifications[0].arn] : []
+    eventbridge_rules = [aws_cloudwatch_event_rule.cloudflare_update_schedule.name]
+    cloudwatch_alarms = var.notification_email != "" ? [
+      aws_cloudwatch_metric_alarm.lambda_error_alarm[0].alarm_name,
+      aws_cloudwatch_metric_alarm.lambda_duration_alarm[0].alarm_name,
+      aws_cloudwatch_metric_alarm.lambda_throttle_alarm[0].alarm_name,
+      aws_cloudwatch_metric_alarm.lambda_success_alarm[0].alarm_name
+    ] : []
+    cloudwatch_dashboards = var.notification_email != "" ? [
+      aws_cloudwatch_dashboard.cloudflare_updater[0].dashboard_name
+    ] : []
+    iam_roles = concat(
+      [aws_iam_role.lambda_execution_role.name],
+      var.enable_automation ? [aws_iam_role.cleanup_lambda_role[0].name] : []
+    )
+  }
+}
+
+output "cleanup_tags" {
+  description = "Tags used to identify resources for cleanup operations"
+  value = {
+    CleanupGroup = "cloudflare-ip-updater-${var.environment}"
+    ResourceType = "automation"
+    DestroyOrder = "managed"
+    Module       = "cloudflare-aws-security-group"
+    Component    = "core"
+    Cleanup      = "required"
+  }
+}
+
+output "destroy_instructions" {
+  description = "Instructions for proper resource destruction"
+  value = {
+    manual_cleanup_steps = [
+      "1. Disable EventBridge rule to stop new Lambda executions",
+      "2. Wait for running Lambda executions to complete (60 seconds)",
+      "3. Remove security group rules to avoid dependency conflicts",
+      "4. Run 'terraform destroy' to remove all resources",
+      "5. Verify all resources are properly cleaned up"
+    ]
+    automated_cleanup_available = var.enable_automation
+    cleanup_lambda_function = var.enable_automation ? aws_lambda_function.cleanup_function[0].function_name : null
+    pre_destroy_cleanup_enabled = true
+    post_destroy_verification_enabled = true
+  }
+}

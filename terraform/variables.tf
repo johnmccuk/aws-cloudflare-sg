@@ -188,3 +188,14 @@ variable "max_expected_cloudflare_ips" {
     error_message = "Maximum expected Cloudflare IPs must be between 50 and 1000."
   }
 }
+
+variable "cost_center" {
+  description = "Cost center for resource tagging and billing allocation"
+  type        = string
+  default     = ""
+  
+  validation {
+    condition     = var.cost_center == "" || can(regex("^[a-zA-Z0-9-_]+$", var.cost_center))
+    error_message = "Cost center must contain only alphanumeric characters, hyphens, and underscores, or be empty."
+  }
+}
